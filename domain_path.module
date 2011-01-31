@@ -99,24 +99,28 @@ function domain_path_is_node_path($path, $language) {
 function domain_path_paths($key = 'nid', $nid = NULL) {
   // TODO: Use drupal_static().
   static $paths;
-  // Cache routine.
-  $cache = cache_get('domain_path');
-  if (isset($cache->data)) {
-    $paths = $cache->data;
-  }
+  // Cache routine. Only run this once.
   if (!isset($paths)) {
-    $paths = array('nid' => array(), 'alias' => array());
-    // TODO: better handling for different entities.
-    // TODO: Language support!
-    $result = db_query("SELECT domain_id, source, alias, language, entity_type, entity_id FROM {domain_path} WHERE entity_type = 'node'");
-    foreach ($result as $path) {
-      $paths['nid'][$path->entity_id][$path->domain_id] = $path->alias;
-      $paths['alias'][$path->alias][$path->domain_id] = $path->source;
+    // Try to get the data from cache.
+    $cache = cache_get('domain_path');
+    if (isset($cache->data)) {
+      $paths = $cache->data;
     }
-    // Cache for performance.
-    // TODO: test.
-    cache_set('domain_path', $paths);
-    // Return data for a single node?
+    // No cache, run the database query.
+    if (!isset($paths)) {
+      $paths = array('nid' => array(), 'alias' => array());
+      // TODO: better handling for different entities.
+      // TODO: Language support!
+      $result = db_query("SELECT domain_id, source, alias, language, entity_type, entity_id FROM {domain_path} WHERE entity_type = 'node'");
+      foreach ($result as $path) {
+        $paths['nid'][$path->entity_id][$path->domain_id] = $path->alias;
+        $paths['alias'][$path->alias][$path->domain_id] = $path->source;
+      }
+      // Cache for performance.
+      // TODO: test.
+      cache_set('domain_path', $paths);
+      // Return data for a single node?
+    }
   }
   if (!is_null($nid) && isset($paths[$key][$nid])) {
     return $paths[$key][$nid];
