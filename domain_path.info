@@ -1,4 +1,3 @@
-;  $Id$
 name = Domain Path
 description = Allows separate path aliases per domain.
 package = Domain Access
