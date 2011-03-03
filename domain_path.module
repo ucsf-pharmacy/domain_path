@@ -21,7 +21,6 @@ function domain_path_permission() {
 function domain_path_domainpath($domain_id, &$path, &$options, $original_path) {
   $domain = domain_get_domain();
   $did = $domain['domain_id'];
-  $language = isset($options['language']) ? $options['language'] : NULL;
   $alias = $path;
   $paths = domain_path_paths('alias');
   if (isset($paths[$path][$did])) {
@@ -29,6 +28,8 @@ function domain_path_domainpath($domain_id, &$path, &$options, $original_path) {
     $nid = arg(1, $alias);
   }
   else {
+    // Language object must be a string. Not currently supported.
+    $language = isset($options['language']) ? $options['language']->language : NULL;
     $nid = domain_path_is_node_path($alias, $language);
     $alias = "node/$nid";
   }
