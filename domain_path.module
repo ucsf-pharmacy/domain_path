@@ -225,11 +225,12 @@ function domain_path_node_validate($node, $form, $form_state) {
   else {
     $new_path = $node->path['alias'];
   }
-  // TODO: Alert the user if we created a duplicate path.
+  // Check to see if pathauto added a -0 to the alias.
+  // In these cases, we try to notify the end user.
   $path = explode('-', $new_path);
   $end = array_pop($path);
   $num = intval($end);
-  if ($num == $end || $end === 0) {
+  if (drupal_strlen($num) == drupal_strlen($end) && ($num == $end || $end === 0)) {
     $alias = implode('-', $path);
   }
   else {
