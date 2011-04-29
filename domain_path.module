@@ -97,8 +97,7 @@ function domain_path_is_node_path($path, $language) {
  *  An array of matches.
  */
 function domain_path_paths($key = 'nid', $nid = NULL) {
-  // TODO: Use drupal_static().
-  static $paths;
+  $paths = &drupal_static(__FUNCTION__);
   // Cache routine. Only run this once.
   if (!isset($paths)) {
     // Try to get the data from cache.
@@ -154,18 +153,18 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
   $default_domain = domain_default();
   $current = t('<none>');
   if (!empty($form['#node']->nid)) {
-    $current = drupal_get_path_alias('node/'. $form['#node']->nid);
+    $current = drupal_get_path_alias('node/' . $form['#node']->nid);
     $paths = domain_path_paths('nid', $form['#node']->nid);
   }
   $form['domain_path']['current'] = array(
     '#type' => 'item',
-    '#title' => t('Current path'),
+    '#title' => t('Current alias'),
     '#markup' => check_plain($current),
   );
   $form['domain_path']['domain_path_ignore'] = array(
     '#type' => 'checkbox',
-    '#title' => t('Use the current alias'),
-    '#default_value' => (empty($paths) && !empty($form['#node']->nid)),
+    '#title' => t('Delete domain-specific aliases'),
+    '#default_value' => FALSE,
   );
   foreach ($domains as $domain_id => $domain) {
     $default = '';
@@ -275,22 +274,28 @@ function domain_path_node_insert($node) {
   if (empty($node->domain_path)) {
     return;
   }
+  // Delete existing aliases.
   domain_path_node_delete($node);
-  unset($node->domain_path['domain_path_ignore']);
-  foreach ($node->domain_path as $domain_id => $path) {
-    if (!empty($path)) {
-      $record = array(
-        'domain_id' => $domain_id,
-        'source' => "node/$node->nid",
-        'alias' => $path,
-        'language' => isset($node->language) ? $node->language : LANGUAGE_NONE,
-        'entity_type' => 'node',
-        'entity_id' => $node->nid,
-      );
-      drupal_write_record('domain_path', $record);
+  // If not set to revert, then save changes.
+  if (empty($node->domain_path['domain_path_ignore'])) {
+    unset($node->domain_path['domain_path_ignore']);
+    foreach ($node->domain_path as $domain_id => $path) {
+      if (!empty($path)) {
+        $record = array(
+          'domain_id' => $domain_id,
+          'source' => "node/$node->nid",
+          'alias' => $path,
+          'language' => isset($node->language) ? $node->language : LANGUAGE_NONE,
+          'entity_type' => 'node',
+          'entity_id' => $node->nid,
+        );
+        drupal_write_record('domain_path', $record);
+      }
     }
   }
+  // Rebuild the node alias.
   cache_clear_all('domain_path', 'cache');
+  drupal_static_reset('domain_path_paths');
 }
 
 /**
