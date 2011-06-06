@@ -17,8 +17,17 @@ function domain_path_permission() {
 
 /**
  * Implements hook_domainpath().
+ *
+ * Wrapper around the new hook_domain_path() for 7.x.2.
  */
 function domain_path_domainpath($domain_id, &$path, &$options, $original_path) {
+  domain_path_domain_path($domain_id, $path, $options, $original_path);
+}
+
+/**
+ * Implements hook_domainpath().
+ */
+function domain_path_domain_path($domain_id, &$path, &$options, $original_path) {
   $domain = domain_get_domain();
   $did = $domain['domain_id'];
   $alias = $path;
