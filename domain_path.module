@@ -157,7 +157,6 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
     '#tree' => TRUE,
     '#title' => t('Domain-specific paths'),
     '#type' => 'fieldset',
-    '#weight' => 10,
     '#group' => 'additional_settings',
     '#access' => user_access('edit domain paths'),
   );
@@ -326,4 +325,19 @@ function domain_path_node_delete($node) {
     ->condition('entity_type', 'node')
     ->condition('entity_id', $node->nid)
     ->execute();
+}
+
+/**
+ * Implements hook_field_extra_fields().
+ */
+function domain_path_field_extra_fields() {
+  $extra = array();
+  foreach (node_type_get_names() as $name => $value) {
+    $extra['node'][$name]['form']['domain_path'] = array(
+      'label' => t('Domain paths'),
+      'description' => t('Domain-specific path settings.'),
+      'weight' => 30,
+    );
+  }
+  return $extra;
 }
