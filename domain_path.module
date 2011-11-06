@@ -130,7 +130,11 @@ function domain_path_paths($key = 'nid', $nid = NULL) {
       // Return data for a single node?
     }
   }
-  if (!is_null($nid) && isset($paths[$key][$nid])) {
+  // If returning results for a single node, pass back only matches.
+  if (!is_null($nid)) {
+    if (!isset($paths[$key][$nid])) {
+      $paths[$key][$nid] = array();
+    }
     return $paths[$key][$nid];
   }
   // Return requested data.
