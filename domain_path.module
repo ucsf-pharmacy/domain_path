@@ -32,14 +32,15 @@ function domain_path_domain_path($domain_id, &$path, &$options, $original_path) 
   $did = $domain['domain_id'];
   $alias = $path;
   $paths = domain_path_paths('alias');
+  // Language object must be a string. Language switching may not be fully
+  // supported and has not been tested.
+  $path_language = isset($options['language']->language) ? $options['language']->language : NULL;
   if (isset($paths[$path][$did])) {
     $alias = $paths[$path][$did];
     $nid = arg(1, $alias);
   }
   else {
-    // Language object must be a string. Not currently supported.
-    $language = isset($options['language']) ? $options['language']->language : NULL;
-    $nid = domain_path_is_node_path($alias, $language);
+    $nid = domain_path_is_node_path($alias, $path_language);
     $alias = "node/$nid";
   }
   if (empty($nid)) {
@@ -50,7 +51,7 @@ function domain_path_domain_path($domain_id, &$path, &$options, $original_path) 
     $path = $paths[$domain_id];
   }
   else {
-    $path = drupal_get_path_alias($alias);
+    $path = drupal_get_path_alias($alias, $path_language);
   }
   $options['alias'] = TRUE;
 }
@@ -73,8 +74,8 @@ function domain_path_url_inbound_alter(&$path, $original_path, $path_language) {
  *
  * TODO: entity support.
  */
-function domain_path_is_node_path($path, $language) {
-  $lookup = drupal_lookup_path('source', $path, $language);
+function domain_path_is_node_path($path, $path_language) {
+  $lookup = drupal_lookup_path('source', $path, $path_language);
   if (!empty($lookup)) {
     $path = $lookup;
   }
@@ -210,11 +211,11 @@ function domain_path_node_validate($node, $form, $form_state) {
       $set_message = TRUE;
     }
     elseif (!empty($path)) {
-      $query = db_query("SELECT COUNT(dpid) FROM {domain_path} 
-        WHERE domain_id = :domain_id 
-        AND alias = :alias 
+      $query = db_query("SELECT COUNT(dpid) FROM {domain_path}
+        WHERE domain_id = :domain_id
+        AND alias = :alias
         AND language = :language
-        AND source != :source", 
+        AND source != :source",
         array(
           ':domain_id' => $key,
           ':alias' => $path,
