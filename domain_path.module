@@ -28,118 +28,176 @@ function domain_path_domainpath($domain_id, &$path, &$options, $original_path) {
  * Implements hook_domainpath().
  */
 function domain_path_domain_path($domain_id, &$path, &$options, $original_path) {
-  $domain = domain_get_domain();
-  $did = $domain['domain_id'];
-  $alias = $path;
-  $paths = domain_path_paths('alias');
-  // Language object must be a string. Language switching may not be fully
-  // supported and has not been tested.
-  $path_language = isset($options['language']->language) ? $options['language']->language : NULL;
-  if (isset($paths[$path][$did])) {
-    $alias = $paths[$path][$did];
-    $nid = arg(1, $alias);
-  }
-  else {
-    $nid = domain_path_is_node_path($alias, $path_language);
-    $alias = "node/$nid";
-  }
-  if (empty($nid)) {
+  // Let's not muck with absolute paths.
+  if (!empty($options['absolute'])) {
     return;
   }
-  $paths = domain_path_paths('nid', $nid);
-  if (isset($paths[$domain_id])) {
-    $path = $paths[$domain_id];
+
+  $path_language = isset($options['language']->language) ? $options['language']->language : NULL;
+  if ($alias = domain_path_lookup_path('alias', $original_path, $domain_id, $path_language)) {
+    $path = $alias;
+    $options['alias'] = TRUE;
   }
-  else {
-    $path = drupal_get_path_alias($alias, $path_language);
+  elseif($alias = drupal_get_path_alias($original_path, $path_language)) {
+    $path = $alias;
+    $options['alias'] = TRUE;
   }
-  $options['alias'] = TRUE;
 }
 
 /**
  * Implements hook_url_inbound_alter().
  */
 function domain_path_url_inbound_alter(&$path, $original_path, $path_language) {
-  $domain = domain_get_domain();
-  $did = $domain['domain_id'];
-  $paths = domain_path_paths('alias');
-  if (!isset($paths[$original_path][$did])) {
-    return;
+  if ($source = domain_path_lookup_path('source', $original_path, NULL, $path_language)) {
+    $path = $source;
   }
-  $path = $paths[$original_path][$did];
 }
 
 /**
- * Tell us if the given path is a node link.
+ * Heavily modeled after drupal_lookup_path().
  *
- * TODO: entity support.
- */
-function domain_path_is_node_path($path, $path_language) {
-  $lookup = drupal_lookup_path('source', $path, $path_language);
-  if (!empty($lookup)) {
-    $path = $lookup;
-  }
-  if (arg(0, $path) != 'node') {
-    return NULL;
-  }
-  $arg2 = arg(2, $path);
-  if (!empty($arg2)) {
-    return NULL;
-  }
-  $arg1 = intval(arg(1, $path));
-  if (empty($arg1)) {
-    return NULL;
-  }
-  return $arg1;
-}
-
-/**
- * Return an array of all paths.
+ * Given an domain specific alias, return its Drupal system URL if one exists. Given a Drupal
+ * system URL return one of its domain specific aliases if such a one exists. Otherwise,
+ * return FALSE.
  *
- * We cache this for performance.
+ * @param $action
+ *   One of the following string values:
+ *   - wipe: delete the alias cache.
+ *   - alias: return an alias for a given Drupal system path (if one exists).
+ *   - source: return the Drupal system URL for a path alias (if one exists).
+ * @param $path
+ *   The path string to investigate for corresponding domain aliases or system URLs.
+ * @param $domain_id
+ *  The id of the domain to load the associated path for.
+ * @param $path_language
+ *   Optional language code to search the path with. Defaults to the page language.
+ *   If there's no path defined for that language it will search paths without
+ *   language.
  *
- * @param $key
- *  The type of data to return. Currently, 'nid' returns an array
- *  keyed by node id. 'alias' returns an array keyed by path alias.
- * @param $nid
- *  A specific node id to return alias matches.
  * @return
- *  An array of matches.
+ *   Either a Drupal system path, an aliased path, or FALSE if no path was
+ *   found.
  */
-function domain_path_paths($key = 'nid', $nid = NULL) {
-  $paths = &drupal_static(__FUNCTION__);
-  // Cache routine. Only run this once.
-  if (!isset($paths)) {
-    // Try to get the data from cache.
-    $cache = cache_get('domain_path');
-    if (isset($cache->data)) {
-      $paths = $cache->data;
-    }
-    // No cache, run the database query.
-    if (!isset($paths)) {
-      $paths = array('nid' => array(), 'alias' => array());
-      // TODO: better handling for different entities.
-      // TODO: Language support!
-      $result = db_query("SELECT domain_id, source, alias, language, entity_type, entity_id FROM {domain_path} WHERE entity_type = 'node'");
-      foreach ($result as $path) {
-        $paths['nid'][$path->entity_id][$path->domain_id] = $path->alias;
-        $paths['alias'][$path->alias][$path->domain_id] = $path->source;
+function domain_path_lookup_path($action, $path = '', $domain_id = NULL, $path_language = NULL) {
+  global $language_url;
+  global $_domain;
+
+  // Use the advanced drupal_static() pattern, since this is called very often.
+  static $drupal_static_fast;
+  if (!isset($drupal_static_fast)) {
+    $drupal_static_fast['cache'] = &drupal_static(__FUNCTION__);
+  }
+  $cache = &$drupal_static_fast['cache'];
+
+  if ($action == 'wipe' || !isset($cache)) {
+    $cache = array(
+      'map' => array(),
+      'no_aliases' => array(),
+      'no_sources' => array(),
+      'domain_id' => $_domain['domain_id'],
+    );
+  }
+
+  // Check and load domain_id and cache if necessary.
+  if ($domain_id == NULL || $domain_id == $cache['domain_id']) {// Null or the same don't do anything.
+    $domain_id = $cache['domain_id'];
+  }
+  elseif($domain = domain_load($domain_id)) {// A differnt domain is wanted.
+    $cache['domain_id'] = $domain_id = $domain['domain_id'];
+  }
+  else {// Bad id? Oh well load current domain again just to make sure.
+    $cache['domain_id'] = $domain_id = $_domain['domain_id'];
+  }
+
+  // If no language is explicitly specified we default to the current URL
+  // language. If we used a language different from the one conveyed by the
+  // requested URL, we might end up being unable to check if there is a path
+  // alias matching the URL path.
+  $path_language = $path_language ? $path_language : $language_url->language;
+  // If the alias has already been loaded, return it.
+  if (isset($cache['map'][$domain_id][$path_language][$path])) {
+    return $cache['map'][$domain_id][$path_language][$path];
+  }
+
+  // Lookup Drupal system path.
+  if ($action == 'source') {
+    // Check $cache['no_sources'] for this $path in case we've already determined that there
+    // isn't a path that has this alias.
+    if (!isset($cache['no_sources'][$domain_id][$path_language][$path])) {
+      $args = array(
+        ':alias' => $path,
+        ':domain_id' => $domain_id,
+        ':language' => $path_language,
+        ':language_none' => LANGUAGE_NONE,
+      );
+
+      // Always get the language-specific alias before the language-neutral
+      // one. For example 'de' is less than 'und' so the order needs to be
+      // ASC, while 'xx-lolspeak' is more than 'und' so the order needs to
+      // be DESC. We also order by pid ASC so that fetchAllKeyed() returns
+      // the most recently created alias for each source. Subsequent queries
+      // using fetchField() must use pid DESC to have the same effect.
+      // For performance reasons, the query builder is not used here.
+      if ($path_language == LANGUAGE_NONE) {
+        unset($args[':language']);
+        $source = db_query("SELECT source FROM {domain_path} WHERE alias = :alias AND domain_id = :domain_id AND language = :language_none ORDER BY dpid DESC", $args)->fetchField();
       }
-      // Cache for performance.
-      // TODO: test.
-      cache_set('domain_path', $paths);
-      // Return data for a single node?
+      elseif ($path_language > LANGUAGE_NONE) {
+        $source = db_query("SELECT source FROM {domain_path} WHERE alias = :alias AND domain_id = :domain_id AND language IN (:language, :language_none) ORDER BY language DESC, dpid DESC", $args)->fetchField();
+      }
+      else {
+        $source = db_query("SELECT source FROM {domain_path} WHERE alias = :alias AND domain_id = :domain_id AND language IN (:language, :language_none) ORDER BY language ASC, dpid DESC", $args)->fetchField();
+      }
+
+
+      if ($source) {// Source was found, store and return it.
+        $cache['map'][$domain_id][$path_language][$path] = $source;
+      }
+      else {// No source found store in no_sources for future lookups.
+        $cache['no_sources'][$domain_id][$path_language][$path] = TRUE;
+      }
+
+      return $source;
     }
   }
-  // If returning results for a single node, pass back only matches.
-  if (!is_null($nid)) {
-    if (!isset($paths[$key][$nid])) {
-      $paths[$key][$nid] = array();
+  // Look up the domain specific alias.
+  elseif ($action == 'alias') {
+    // Check $cache['no_aliases'] for this $path in case we've already determined that there
+    // isn't an alias for this path.
+    if (!isset($cache['no_aliases'][$domain_id][$path_language][$path])) {
+      $args = array(
+        ':source' => $path,
+        ':domain_id' => $domain_id,
+        ':language' => $path_language,
+        ':language_none' => LANGUAGE_NONE,
+      );
+
+      // See the queries above.
+      if ($path_language == LANGUAGE_NONE) {
+        unset($args[':language']);
+        $alias = db_query("SELECT alias FROM {domain_path} WHERE source = :source AND domain_id = :domain_id AND language = :language_none ORDER BY dpid DESC", $args)->fetchField();
+      }
+      elseif ($path_language > LANGUAGE_NONE) {
+        $alias = db_query("SELECT alias FROM {domain_path} WHERE source = :source AND domain_id = :domain_id AND language IN (:language, :language_none) ORDER BY language DESC, dpid DESC", $args)->fetchField();
+      }
+      else {
+        $alias = db_query("SELECT alias FROM {domain_path} WHERE source = :source AND domain_id = :domain_id AND language IN (:language, :language_none) ORDER BY language ASC, dpid DESC", $args)->fetchField();
+      }
+      // Alias was found, store and return it.
+      if ($alias) {
+        $cache['map'][$domain_id][$path_language][$path] = $alias;
+      }
+      // No alias found store in no_aliases for future lookups.
+      else {
+        $cache['no_aliases'][$domain_id][$path_language][$path] = TRUE;
+      }
+
+      return $alias;
     }
-    return $paths[$key][$nid];
   }
-  // Return requested data.
-  return $paths[$key];
+
+  // Otherwise always FALSE.
+  return FALSE;
 }
 
 /**
@@ -153,7 +211,6 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
     $form['domain']['#group'] = 'additional_settings';
   }
 
-  cache_clear_all('domain_path', 'cache');
   $form['domain_path'] = array(
     '#tree' => TRUE,
     '#title' => t('Domain-specific paths'),
@@ -165,10 +222,13 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
   $domains = domain_domains();
   $default_domain = domain_default();
   $current = t('<none>');
+
+  $path = $nid = FALSE;
   if (!empty($form['#node']->nid)) {
     $current = drupal_get_path_alias('node/' . $form['#node']->nid);
-    $paths = domain_path_paths('nid', $form['#node']->nid);
+    $nid = $form['#node']->nid;
   }
+
   $form['domain_path']['current'] = array(
     '#type' => 'item',
     '#title' => t('Current alias'),
@@ -180,12 +240,16 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
     '#default_value' => FALSE,
   );
   foreach ($domains as $domain_id => $domain) {
+    if ($nid) {
+      $path = domain_path_lookup_path('alias', 'node/' . $form['#node']->nid, $domain_id);
+    }
+
     $default = '';
     // TODO: Only exposed checked domains?
     $form['domain_path'][$domain_id] = array(
       '#type' => 'textfield',
       '#title' => check_plain($domain['path']),
-      '#default_value' => isset($paths[$domain_id]) ? $paths[$domain_id] : $default,
+      '#default_value' => $path ? $path : $default,
       '#access' => user_access('edit domain paths'),
     );
   }
@@ -306,9 +370,9 @@ function domain_path_node_insert($node) {
       }
     }
   }
+
   // Rebuild the node alias.
-  cache_clear_all('domain_path', 'cache');
-  drupal_static_reset('domain_path_paths');
+  drupal_static_reset('domain_path_lookup_path');
 }
 
 /**
