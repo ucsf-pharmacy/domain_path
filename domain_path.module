@@ -217,10 +217,38 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
     '#type' => 'fieldset',
     '#group' => 'additional_settings',
     '#access' => user_access('edit domain paths'),
+    '#attached' => array(
+      'js' => array(drupal_get_path('module', 'domain_path') . '/domain_path.js'),
+    ),
   );
+
+  // If the user doesn't have access to the domain form element then we will
+  // create a domain id setting for the js so that it will know which path
+  // field to display.
+  if (!user_access('publish to any assigned domain') && !user_access('set domain access')) {
+    $domain_id = FALSE;
+
+    // Only set the default domain id as the js domain id when the user can
+    // publish from default domain but not when the user can publish from
+    // assigned domains.
+    if (user_access('publish from default domain') && !user_access('publish from assigned domain')) {
+      $default_domain = domain_default();
+      $domain_id = $default_domain['domain_id'];
+    }
+    // Set the js domain id to the current domain for everything else.
+    else {
+      global $_domain;
+      $domain_id = $_domain['domain_id'];
+    }
+
+    $form['domain_path']['#attached']['js'][] = array(
+      'data' => array('domainPath' => array('domainId' => $domain_id)),
+      'type' => 'setting',
+    );
+  }
+
   $paths = array();
   $domains = domain_domains();
-  $default_domain = domain_default();
   $current = t('<none>');
 
   $path = $nid = FALSE;
