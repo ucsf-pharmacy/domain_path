@@ -304,12 +304,9 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
     '#type' => 'item',
     '#title' => t('Current alias'),
     '#markup' => check_plain($current),
+    '#weight' => -5,
   );
-  $form['domain_path']['domain_path_ignore'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Delete domain-specific aliases'),
-    '#default_value' => FALSE,
-  );
+  $show_delete = FALSE;
   foreach ($domains as $domain_id => $domain) {
     $path = FALSE;
     if ($nid) {
@@ -317,6 +314,9 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
     }
 
     $default = '';
+    if ($path) {
+      $show_delete = TRUE;
+    }
     // TODO: Only exposed checked domains?
     $form['domain_path'][$domain_id] = array(
       '#type' => 'textfield',
@@ -325,25 +325,33 @@ function domain_path_form_node_form_alter(&$form, $form_state) {
       '#access' => user_access('edit domain paths'),
     );
   }
+  $form['domain_path']['domain_path_delete'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Delete domain-specific aliases'),
+    '#default_value' => FALSE,
+    '#access' => $show_delete,
+    '#weight' => -1,
+  );
 }
 
 /**
  * Implements hook_node_validate().
  */
-function domain_path_node_validate($node, $form, $form_state) {
-  $ignore = $form_state['values']['domain_path']['domain_path_ignore'];
-  if (!empty($ignore)) {
+function domain_path_node_validate($node, $form, &$form_state) {
+  // No validatio on node delete, alias delete, or alias override.
+  $op = $form_state['values']['op'];
+  $delete = $form_state['values']['domain_path']['domain_path_delete'];
+  if (!empty($delete) || $op == t('Delete')) {
     return;
   }
-  $set_message = FALSE;
   $paths = $form_state['values']['domain_path'];
-  unset($paths['domain_path_ignore']);
+  unset($paths['domain_path_delete']);
   $alias = $form_state['values']['path']['alias'];
   // Make sure we don't duplicate anything.
   foreach ($paths as $domain_id => $path) {
     $key = ($domain_id == -1) ? 0 : $domain_id;
     if (!empty($path) && $path == $alias) {
-      form_set_error("domain_path][$key", t('Domain path may not match default path alias. You may leave the element blank.'));
+      form_set_error("domain_path][$key", t('Domain path %alias may not match the default path alias. You may leave the element blank.', array('%alias' => $path)));
       $set_message = TRUE;
     }
     elseif (!empty($path)) {
@@ -360,59 +368,10 @@ function domain_path_node_validate($node, $form, $form_state) {
         )
       );
       if ($query->fetchField() > 0) {
-        form_set_error("domain_path][$key", t('Domain path matches an existing domain path alias.'));
+        $domain = domain_lookup($domain_id);
+        form_set_error("domain_path][$key", t('Domain path %alias matches an existing domain path alias for %domain.', array('%alias' => $path, '%domain' => $domain['path'])));
       }
     }
-  }
-  // Check for duplicates.
-  $uri = entity_uri('node', $node);
-  if (module_exists('pathauto') && !empty($node->path['pathauto_perform_alias'])) {
-    module_load_include('inc', 'pathauto');
-    $new_path = pathauto_create_alias('node', 'return', $uri['path'], array('node' => $node), $node->type, $node->language);
-  }
-  else {
-    $new_path = $node->path['alias'];
-  }
-  // Check to see if pathauto added a -0 to the alias.
-  // In these cases, we try to notify the end user.
-  $path = explode('-', $new_path);
-  $end = array_pop($path);
-  $num = intval($end);
-  if (drupal_strlen($num) == drupal_strlen($end) && ($num == $end || $end === 0)) {
-    $alias = implode('-', $path);
-  }
-  else {
-    $alias = $new_path;
-  }
-  // Ensure that the submitted alias does not exist yet.
-  $query = db_select('url_alias')
-    ->condition('alias', $alias)
-    ->condition('language', $node->path['language']);
-  if (!empty($node->path['source'])) {
-    $query->condition('source', $node->path['source'], '<>');
-  }
-  $query->addExpression('1');
-  $query->range(0, 1);
-  $count = $query->execute()->fetchField();
-  if ($count) {
-    // If there are no aliases for the active domains, we have to ensure
-    // that this is not a duplicate alias.
-    $domains = array_filter($node->domains);
-    $set_paths = array_filter($paths);
-    if (empty($domains)) {
-      form_set_error('domain_path', t('The path alias is already in use. You may provide a domain-specific alias below.'));
-      $set_message = TRUE;
-    }
-    elseif (empty($set_paths)) {
-      foreach ($domains as $domain_id) {
-        $key = ($domain_id == -1) ? 0 : $domain_id;
-        form_set_error("domain_path][$key", t('The path alias %alias is already in use. You should provide a domain-specific alias.', array('%alias' => $alias)));
-        $set_message = TRUE;
-      }
-    }
-  }
-  if ($set_message) {
-    drupal_set_message(t('If you choose to use the current alias, the path to this page will be: %alias', array('%alias' => $new_path)), 'error', FALSE);
   }
 }
 
@@ -425,9 +384,9 @@ function domain_path_node_insert($node) {
   }
 
   // If not set to revert, then save changes.
-  if (empty($node->domain_path['domain_path_ignore'])) {
+  if (empty($node->domain_path['domain_path_delete'])) {
     $paths = array();
-    unset($node->domain_path['domain_path_ignore']);
+    unset($node->domain_path['domain_path_delete']);
     foreach ($node->domain_path as $domain_id => $alias) {
       // Attempt to retreive the path.
       $conditions = array(
