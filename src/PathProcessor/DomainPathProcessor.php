@@ -75,7 +75,6 @@ class DomainPathProcessor implements InboundPathProcessorInterface, OutboundPath
    * {@inheritdoc}
    */
   public function processInbound($path, Request $request) {
-    $domain_paths = '';
     if ($active = $this->domainNegotiator->getActiveDomain()) {
       $properties = [
         'alias' => $path,
@@ -100,21 +99,16 @@ class DomainPathProcessor implements InboundPathProcessorInterface, OutboundPath
       // It's possible the path module has aliased this path already so we're
       // going to revert that.
       $unaliased_path = $this->aliasManager->getPathByAlias($path);
-
       $properties = [
         'source' => $unaliased_path,
         'domain_id' => $active_domain->id(),
         'language' => $this->languageManager->getCurrentLanguage()->getId(),
       ];
-
       $domain_paths = $this->entityTypeManager->getStorage('domain_path')->loadByProperties($properties);
-
       if (empty($domain_paths)) {
         return $path;
       }
-
       $domain_path = reset($domain_paths);
-
       // If the unaliased path matches our domain path source (internal url)
       // then we have a match and we output the alias, otherwise we just pass
       // the original $path along.
