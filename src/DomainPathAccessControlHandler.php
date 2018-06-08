@@ -21,7 +21,7 @@ class DomainPathAccessControlHandler extends EntityAccessControlHandler {
   protected function checkAccess(EntityInterface $entity, $operation, AccountInterface $account) {
     switch ($operation) {
       case 'view':
-        return AccessResult::allowedIfHasPermission($account, 'view domain paths');
+        return AccessResult::allowedIfHasPermission($account, 'view domain path list');
 
       case 'edit':
         return AccessResult::allowedIfHasPermission($account, 'edit domain paths');

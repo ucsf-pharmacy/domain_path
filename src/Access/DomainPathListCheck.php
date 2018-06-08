@@ -20,7 +20,7 @@ class DomainPathListCheck {
    */
   public static function viewDomainPathList(AccountInterface $account) {
     if ($account->hasPermission('administer domain paths')
-      || $account->hasPermission('view domain paths')) {
+      || $account->hasPermission('view domain path list')) {
       return AccessResult::allowed();
     }
     return AccessResult::forbidden();
