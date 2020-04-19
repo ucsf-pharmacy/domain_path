@@ -126,6 +126,7 @@ class DomainPathHelper {
       $form['path']['domain_path'][$domain_id] = [
         '#type' => 'textfield',
         '#title' => Html::escape(rtrim($domain->getPath(), '/')),
+        '#description' => $domain->label(),
         '#default_value' => $path ? $path : $default,
         '#access' => $this->accountManager->hasPermission('edit domain path entity'),
         '#states' => [
@@ -139,8 +140,10 @@ class DomainPathHelper {
       // it's checked. e.g. on the node form, we only show the domain path
       // field for domains we're publishing to
       if (!empty($form['field_domain_access']['widget']['#options'][$domain_id])) {
-        $form['path']['domain_path'][$domain_id]['#states']['invisible']['input[name="field_domain_access[' . $domain_id . ']"]'] = ['checked' => FALSE];
-        $form['path']['domain_path'][$domain_id]['#states']['invisible']['input[name="field_domain_all_affiliates[value]"]'] = ['checked' => FALSE];
+        $form['path']['domain_path'][$domain_id]['#states']['invisible']['input[name="field_domain_access[' . $domain_id . ']"]'] = ['unchecked' => TRUE];
+        $form['path']['domain_path'][$domain_id]['#states']['invisible']['input[name="field_domain_all_affiliates[value]"]'] = ['unchecked' => TRUE];
+      } elseif (!empty($form['field_domain_access']['widget']['#options'])) {
+        $form['path']['domain_path'][$domain_id]['#access'] = FALSE;
       }
     }
 
