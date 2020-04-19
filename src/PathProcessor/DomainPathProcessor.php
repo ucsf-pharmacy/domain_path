@@ -101,7 +101,7 @@ class DomainPathProcessor implements InboundPathProcessorInterface, OutboundPath
       $unaliased_path = $this->aliasManager->getPathByAlias($path);
       $properties = [
         'source' => $unaliased_path,
-        'domain_id' => $active_domain->id(),
+        'domain_id' => (!empty($options['domain_id'])) ? $options['domain_id'] : $active_domain->id(),
         'language' => $this->languageManager->getCurrentLanguage()->getId(),
       ];
       $domain_paths = $this->entityTypeManager->getStorage('domain_path')->loadByProperties($properties);
