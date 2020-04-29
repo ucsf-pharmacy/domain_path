@@ -1,0 +1,11 @@
+#1
+Add domain site name as domain path field description.
+
+#2
+Fix domain path field conditional states so it correctly hides if its
+respective domain is not assigned.
+
+#3
+Expand DomainPathProcessor::processOutbound() to allow loading domain paths
+from any domain, not just the active domain.
+
